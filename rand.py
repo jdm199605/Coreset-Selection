@@ -13,12 +13,14 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type = str, default = 'brazil')
+parser.add_argument('--data', type = str, default = 'covtype')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
 parser.add_argument('--every', type = int, default = 5)
 parser.add_argument('--num_epochs', type = int, default = 50)
 parser.add_argument('--method', type = str, default = 'full')
+parser.add_argument('--num_runs', type = int, default = 5)
+parser.add_argument('--lr', type = float, default = 1e-2)
 args = parser.parse_args()
 
 class MyDataset(Dataset):
@@ -41,7 +43,7 @@ class LogitRegression(torch.nn.Module):
         output = self.linear(inputs)
         return output
 
-frac_list = [1] if args.method == 'full' else [0.1, 0.3, 0.5, 0.7]
+frac_list = [1] if args.method == 'full' else [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
 prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
@@ -54,72 +56,60 @@ for frac in frac_list:
         y_path = f'./data/{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
         
         #print (x_path, y_path)
-        
-        features = np.load(x_path)
-        labels = np.load(y_path)
-        idxs = np.random.choice(len(features), int(frac*len(features)), replace=False)
-        
-        features = features[idxs]
-        labels = labels[idxs]
-        num_classes = len(np.unique(labels))
-        
-        #print (features.shape[1], num_classes)
-        model = LogitRegression(features.shape[1], num_classes).to('cuda:0')
+        results = torch.zeros(args.num_runs)
+        for run in range(args.num_runs):
+            features = np.load(x_path)
+            labels = np.load(y_path)
+            idxs = np.random.choice(len(features), int(frac*len(features)), replace=False)
+            num_classes = len(np.unique(labels))
+            model = LogitRegression(features.shape[1], num_classes).to('cuda:0')
 
-        dataset = MyDataset(features, labels)
-        trainloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = True)
-        
-        criterion = nn.CrossEntropyLoss()
-        optimizer = torch.optim.SGD(model.parameters(), lr=0.01,weight_decay=0.0003)
-        start_time = time.time() 
-        
-        model.train()
-        
-        for i in range(args.num_epochs):
-            total_loss = 0
-            for inputs, targets in trainloader:
-                inputs, targets = inputs.to('cuda:0'), targets.to('cuda:0')
-                #print (inputs[0])
-                outputs = model(inputs)
-                loss = criterion(outputs, targets)
-                total_loss += loss
-                
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-            print (total_loss)
+            features = features[idxs]
+            labels = labels[idxs]
+
+            dataset = MyDataset(features, labels)
+            trainloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = True)
+
+            criterion = nn.CrossEntropyLoss()
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay = 1e-8)
+            start_time = time.time() 
+
+            model.train()
+
+            for i in range(args.num_epochs):
+                total_loss = 0
+                for inputs, targets in trainloader:
+                    inputs, targets = inputs.to('cuda:0'), targets.to('cuda:0')
+                    #print (inputs[0])
+                    outputs = model(inputs)
+                    loss = criterion(outputs, targets)
+                    total_loss += loss
+
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                #print (total_loss)
+
+            end_time = time.time()
+            print ("Model training time is: %.4f", end_time-start_time)
+
+            model.eval()
+            test_x = np.load(f'./data/{args.data}-test-x.npy')
+            test_y = np.load(f'./data/{args.data}-test-y.npy')
+            test_size = len(test_y)
+
+            test_x = torch.Tensor(test_x).to('cuda:0')
+            test_y = torch.Tensor(test_y).to('cuda:0')
+            pred = torch.argmax(model(test_x), axis = 1)
             
-        end_time = time.time()
-        print ("Model training time is: %.4f", end_time-start_time)
-            
-        model.eval()
-        test_x = np.load(f'./data/{args.data}-test-x.npy')
-        test_y = np.load(f'./data/{args.data}-test-y.npy')
-        test_size = len(test_y)
+            results[run] = (sum(pred == test_y)/len(test_x))
+            print (f"frac:{frac}, prob:{prob}, run: {run}, result:{results}")
 
-        pos = np.zeros(num_classes)
-        Num = np.zeros(num_classes)
-        pred = np.zeros(test_size)
+        df.loc[frac,prob] = float(results.mean())
 
-        for i in range(test_size):
-            inputs = torch.Tensor(test_x[i]).to('cuda:0')
-            outputs = model(inputs)
-            pred[i] = torch.argmax(outputs)
-            c = int(test_y[i])
-            try:
-                Num[c]+=1
-                if pred[i] == c:
-                    pos[c]+=1
-            except:
-                print (c)
-        result = sum(pos)/sum(Num)
-        print (result)
-                
-        df.loc[frac,prob] = result
+        saved_path = f'./results/{args.method}-{args.data}-{mode}-results.csv'
 
-saved_path = f'./results/{args.method}-{args.data}-{mode}-results.csv'
-
-df.to_csv(saved_path,sep=',',index=True)
+        df.to_csv(saved_path,sep=',',index=True)
 
             
             
