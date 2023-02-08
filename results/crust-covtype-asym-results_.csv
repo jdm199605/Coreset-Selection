@@ -1,0 +1,8 @@
+,0.0,0.2,0.4,0.6,0.8
+1e-05,tensor(0.5969),tensor(0.4899),tensor(0.4225),tensor(0.3252),tensor(0.2425)
+0.0001,tensor(0.6122),tensor(0.4993),tensor(0.4114),tensor(0.3031),tensor(0.2470)
+0.001,tensor(0.5863),tensor(0.4978),tensor(0.4461),tensor(0.3548),tensor(0.2322)
+0.01,tensor(0.6271),tensor(0.5124),tensor(0.4139),tensor(0.3340),tensor(0.2639)
+0.1,tensor(0.6551),tensor(0.5558),tensor(0.4784),tensor(0.3433),tensor(0.2085)
+0.3,,,,,
+0.5,,,,,
