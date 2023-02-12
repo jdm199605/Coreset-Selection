@@ -7,7 +7,7 @@ import apricot
 import math
 import pandas as pd
 import apricot
-from utils import compute_gradients
+from utils import compute_gradients, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
 
@@ -15,59 +15,35 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'covtype')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
-parser.add_argument('--every', type = int, default = 5)
-parser.add_argument('--num_epochs', type = int, default = 50)
+parser.add_argument('--every', type = int, default = 3)
+parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--num_runs', type = int, default = 5)
 parser.add_argument('--lr', type = float, default = 1e-2)
-parser.add_argument('--warmup', type = int, default = 5)
+parser.add_argument('--warmup', type = int, default = 3)
 parser.add_argument('--radius', type = float, default = 2.0)
 parser.add_argument('--device', type = str, default = 'cuda:0')
 args = parser.parse_args()
-
-class MyDataset(Dataset):
-    def __init__(self, features, labels):
-        self.features = torch.Tensor(features)
-        self.labels = torch.Tensor(labels)
-    
-    def __len__(self):
-        return len(self.features)
-    
-    def __getitem__(self, index):
-        return self.features[index], self.labels[index].long()
-
-class LogitRegression(torch.nn.Module):
-    def __init__(self, num_features, num_classes):
-        super(LogitRegression, self).__init__()
-        self.linear = torch.nn.Linear(num_features, num_classes)
-    
-    def forward(self, inputs):
-        output = self.linear(inputs)
-        return output
-
-class Coreset(Dataset):
-    def __init__(self, features, labels, weights):
-        self.features = torch.Tensor(features)
-        self.labels = torch.Tensor(labels)
-        self.weights = torch.Tensor(weights)
-        
-    def __getitem__(self, index):
-        return self.features[index], self.labels[index].long(), self.weights[index]
-    
-    def __len__(self):
-        return len(self.features)
 
 frac_list = [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
 prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
 
-df = pd.DataFrame(index=frac_list, columns=prob_list)
+df_results = pd.DataFrame(index=frac_list, columns=prob_list)
+df_times = pd.DataFrame(index=frac_list, columns=prob_list)
+
+CLS = 1 if args.data in ['covtype', 'imdbc'] else 0 #whether it is a classification problem
 
 for frac in frac_list:
     for prob in prob_list:
         x_path = f'./data/{args.data}-train-x.npy'
-        y_path = f'./data/{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
-        results = torch.zeros(5)
+        if CLS:
+            y_path = f'./data/{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
+        else:
+            y_path = f'./data/{args.data}-train-y-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
+        
+        results = torch.zeros(args.num_runs)
+        times = torch.zeros(args.num_runs)
         
         for run in range(args.num_runs):
             features = np.load(x_path)
@@ -77,12 +53,16 @@ for frac in frac_list:
             labels = labels[idxs]
             num_classes = len(np.unique(labels))
 
-            model = LogitRegression(features.shape[1], num_classes).to('cuda:0')
+            if CLS:
+                num_classes = len(np.unique(labels))
+                model = LogitRegression(features.shape[1], num_classes).to('cuda:0')
+            else:
+                model = LinearRegression(features.shape[1]).to('cuda:0')
 
-            dataset = MyDataset(features, labels)
+            dataset = CLSDataset(features, labels) if CLS else REGDataset(features, labels)
             subsetloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = False)
 
-            criterion = nn.CrossEntropyLoss()
+            criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
             optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=1e-8)
             budget = math.ceil(frac*len(features))
             
@@ -95,6 +75,8 @@ for frac in frac_list:
                     for inputs, targets in warmuploader:
                         inputs, targets = inputs.to('cuda:0'), targets.to('cuda:0')
                         outputs = model(inputs)
+                        if not CLS:
+                            targets = targets.unsqueeze(1)
                         loss = criterion(outputs, targets)
                         
                         optimizer.zero_grad()
@@ -109,7 +91,7 @@ for frac in frac_list:
                     
                     weights = []
                     ssets = []
-                    grads = compute_gradients(model, dataset, args.batch_size, criterion)
+                    grads = compute_gradients(model, dataset, args.batch_size, criterion, CLS)
                     #print (trn_gradients.shape)
                     
                     grads = grads.detach().cpu()
@@ -137,7 +119,6 @@ for frac in frac_list:
                         new_idxs = np.random.choice(list(remain_list), remain, replace = False)
                         ssets.extend(new_idxs)
                         weights.extend([1] * remain)
-                        ssets = torch.Tensor(idxs)
                         weights = torch.Tensor(weights)
                     
                     feats = features[ssets]
@@ -151,8 +132,13 @@ for frac in frac_list:
                     
                 for inputs, targets, weights in trainloader:
                     inputs, targets, weights = torch.Tensor(inputs).to('cuda:0'), torch.Tensor(targets).to('cuda:0'), torch.Tensor(weights).to('cuda:0')
-                    output = model(inputs)
-                    loss = (weights * criterion(output, targets)).sum()
+                    outputs = model(inputs)
+                    if CLS:
+                        targets = targets.long()
+                        loss = (weights * criterion(outputs, targets)).sum()
+                    else:
+                        targets = targets.unsqueeze(1)
+                        loss = (weights * criterion(outputs, targets)).sum() / sum(weights)
                     
                     optimizer.zero_grad()
                     loss.backward()
@@ -169,14 +155,24 @@ for frac in frac_list:
             test_x = torch.Tensor(test_x).to('cuda:0')
             test_y = torch.Tensor(test_y).to('cuda:0')
             pred = torch.argmax(model(test_x), axis = 1)
-            #print (pred)
-            #results.append(sum(pos)/sum(Num))
-            #print (pred.eq_(test_y))
-            results[run] = (sum(pred == test_y)/len(test_x))
+            
+            if CLS:
+                pred = torch.argmax(model(test_x), axis = 1)  
+                results[run] = (sum(pred == test_y)/len(test_x))
+            else:
+                pred = model(test_x)
+                results[run] = math.sqrt(torch.pow(pred-test_y.unsqueeze(1), 2).sum() / len(test_y))
+            times[run] = end_time - start_time
+                
             print (f"frac:{frac}, prob:{prob}, run: {run}, result:{results}")
                 
-        df.loc[frac,prob] = results.mean()
+        df_results.loc[frac,prob] = float(results.mean())
+        df_times.loc[frac,prob] = float(times.mean())
         
-        saved_path = f'./results/crust-{args.data}-{mode}-results.csv'
+        r_saved_path = f'./results/crustpb-{args.data}-{mode}-results.csv' if CLS else \
+                            f'./results/crustpb-{args.data}-results.csv'
+        t_saved_path = f'./times/crustpb-{args.data}-{mode}-times.csv' if CLS else \
+                            f'./times/crustpb-{args.data}-times.csv'
 
-        df.to_csv(saved_path,sep=',',index=True)
+        df_results.to_csv(r_saved_path,sep=',',index=True)
+        df_times.to_csv(t_saved_path,sep=',',index=True)

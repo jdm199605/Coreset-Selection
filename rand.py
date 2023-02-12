@@ -3,72 +3,30 @@ import torch.nn as nn
 import time
 import argparse
 import numpy as np
-import apricot
 import math
 import pandas as pd
-from utils import distance, compute_score, compute_gamma
-#from cords.utils.data.dataloader.SL.adaptive.gradmatchdataloader import GradMatchDataLoader
-#from cords.utils.data.dataloader.SL.models.logreg_net.py import LogisticRegNet 
+from utils import CLSDataset, REGDataset, LogitRegression, LinearRegression
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type = str, default = 'taxi')
+parser.add_argument('--data', type = str, default = 'covtype')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
-parser.add_argument('--batch_size', type = int, default = 256)
-parser.add_argument('--num_epochs', type = int, default = 50)
+parser.add_argument('--batch_size', type = int, default = 128)
+parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--method', type = str, default = 'full')
 parser.add_argument('--num_runs', type = int, default = 5)
-parser.add_argument('--lr', type = float, default = 1e-4)
+parser.add_argument('--lr', type = float, default = 1e-2)
 parser.add_argument('--device', type = str, default = 'cuda:0')
 args = parser.parse_args()
-
-class CLSDataset(Dataset):
-    def __init__(self, features, labels):
-        self.features = torch.Tensor(features)
-        self.labels = torch.Tensor(labels)
-    
-    def __len__(self):
-        return len(self.features)
-    
-    def __getitem__(self, index):
-        return self.features[index], self.labels[index].long()
-
-class REGDataset(Dataset):
-    def __init__(self, features, labels):
-        self.features = torch.Tensor(features)
-        self.labels = torch.Tensor(labels)
-    
-    def __len__(self):
-        return len(self.features)
-    
-    def __getitem__(self, index):
-        return self.features[index], self.labels[index]
-
-
-class LogitRegression(torch.nn.Module):
-    def __init__(self, num_features, num_classes):
-        super(LogitRegression, self).__init__()
-        self.linear = torch.nn.Linear(num_features, num_classes)
-    
-    def forward(self, inputs):
-        output = self.linear(inputs)
-        return output
-
-class LinearRegression(torch.nn.Module): 
-    def __init__(self, num_features):
-        super(LinearRegression, self).__init__()
-        self.linear = torch.nn.Linear(num_features, 1)
-    
-    def forward(self, inputs):
-        return self.linear(inputs)
 
 frac_list = [1] if args.method == 'full' else [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
 prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
 
-df = pd.DataFrame(index=frac_list, columns=prob_list)
+df_results = pd.DataFrame(index=frac_list, columns=prob_list)
+df_times= pd.DataFrame(index=frac_list, columns=prob_list)
 
 CLS = 1 if args.data in ['covtype', 'imdbc'] else 0 #whether it is a classification problem
 
@@ -76,11 +34,16 @@ for frac in frac_list:
     for prob in prob_list:
         x_path = f'./data/{args.data}-train-x.npy'
         if CLS:
-            y_path = f'./data/{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
+            y_clean_path = f'./data/{args.data}-train-y.npy'
+            y_path = f'./data/{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else y_clean_path
         else:
-            y_path = f'./data/{args.data}-train-y-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
+            y_clean_path = f'./data/{args.data}-train-y.npy'
+            y_path = f'./data/{args.data}-train-y-{prob}.npy' if prob != 0 else y_clean_path
         #print (x_path, y_path)
+        
         results = torch.zeros(args.num_runs)
+        times = np.zeros(args.num_runs)
+        
         for run in range(args.num_runs):
             features = np.load(x_path)
             labels = np.load(y_path)
@@ -98,7 +61,7 @@ for frac in frac_list:
             trainloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = True)
 
             criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
-            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay = 0.003)
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum = 0.9, weight_decay = 1e-5)
             start_time = time.time() 
 
             model.train()
@@ -110,8 +73,10 @@ for frac in frac_list:
                     inputs, targets = inputs.to('cuda:0'), targets.to('cuda:0')
                     #print (inputs[0])
                     outputs = model(inputs)
-                    #print (outputs.shape, targets.shape)
-                    loss = criterion(outputs, targets.unsqueeze(1))
+                    if not CLS:
+                        targets = targets.unsqueeze(1)
+                    loss = criterion(outputs, targets)
+                    
                     total_loss += loss
             
                     optimizer.zero_grad()
@@ -135,14 +100,20 @@ for frac in frac_list:
             else:
                 pred = model(test_x)
                 results[run] = math.sqrt(torch.pow(pred-test_y.unsqueeze(1), 2).sum() / len(test_y))
+            times[run] = end_time - start_time
             print (f"frac:{frac}, prob:{prob}, run: {run}, result:{results}")
 
-        df.loc[frac,prob] = float(results.mean())
+        df_results.loc[frac,prob] = float(results.mean())
+        df_times.loc[frac,prob] = float(times.mean())
 
-        saved_path = f'./results/{args.method}-{args.data}-{mode}-results.csv' if CLS else \
+        r_saved_path = f'./results/{args.method}-{args.data}-{mode}-results.csv' if CLS else \
                             f'./results/{args.method}-{args.data}-results.csv'
+        t_saved_path = f'./times/{args.method}-{args.data}-{mode}-times.csv' if CLS else \
+                            f'./times/{args.method}-{args.data}-times.csv'
 
-        df.to_csv(saved_path,sep=',',index=True)
+        df_results.to_csv(r_saved_path,sep=',',index=True)
+        df_times.to_csv(t_saved_path, sep = ',',index=True)
+        
 
             
             

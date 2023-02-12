@@ -5,7 +5,7 @@ from utils import normalize
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data',type=str, default='brazil')
-parser.add_argument('--r',type=float, default = 0.7)
+parser.add_argument('--r',type=float, default = 0.6)
 
 args = parser.parse_args()
 
@@ -19,7 +19,7 @@ else:
 
 num_features = dataset.shape[1]-1
 size = dataset.shape[0]
-#dataset = normalize(dataset, num_features)
+dataset = normalize(dataset, num_features)
 
 #split the data
 train_index = np.random.choice(size, int(args.r*size),replace=False)
