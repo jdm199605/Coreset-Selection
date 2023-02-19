@@ -64,7 +64,7 @@ class LinearRegression(torch.nn.Module):
 def normalize(X, col):
     mu = np.mean(X[:,:col],axis=0)
     sigma = np.std(X[:,:col],axis=0)
-    X[:,:col] =  (X[:,:col]-mu)/sigma
+    X[:,:col] =  (X[:,:col]-mu)/(sigma+1e-10)
     return X
 
 def distance(x, y, exp = 2):

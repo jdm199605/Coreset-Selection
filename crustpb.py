@@ -12,13 +12,14 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type = str, default = 'covtype')
+parser.add_argument('--data', type = str, default = 'imdbr')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
+parser.add_argument('--B', type = int, default = 1024)
 parser.add_argument('--every', type = int, default = 3)
 parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--num_runs', type = int, default = 5)
-parser.add_argument('--lr', type = float, default = 1e-2)
+parser.add_argument('--lr', type = float, default = 1e-4)
 parser.add_argument('--warmup', type = int, default = 3)
 parser.add_argument('--radius', type = float, default = 2.0)
 parser.add_argument('--device', type = str, default = 'cuda:0')
@@ -60,10 +61,10 @@ for frac in frac_list:
                 model = LinearRegression(features.shape[1]).to('cuda:0')
 
             dataset = CLSDataset(features, labels) if CLS else REGDataset(features, labels)
-            subsetloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = False)
+            subsetloader = DataLoader(dataset, batch_size = args.B, shuffle = False)
 
             criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
-            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=1e-8)
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=1e-5)
             budget = math.ceil(frac*len(features))
             
             start_time = time.time()
@@ -91,7 +92,7 @@ for frac in frac_list:
                     
                     weights = []
                     ssets = []
-                    grads = compute_gradients(model, dataset, args.batch_size, criterion, CLS)
+                    grads = compute_gradients(model, dataset, args.B, criterion, CLS)
                     #print (trn_gradients.shape)
                     
                     grads = grads.detach().cpu()
@@ -100,7 +101,7 @@ for frac in frac_list:
                     weights_pb = np.sum(dist_mat < args.radius, axis = 1)
                     
                     fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
-                                                                          n_samples=math.ceil(budget / args.batch_size),
+                                                                          n_samples=math.ceil(budget / args.B),
                                                                                               optimizer='lazy')
                     sim_sub = fl.fit_transform(dist_mat)
                     ssets_pb = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))

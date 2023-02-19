@@ -10,13 +10,14 @@ from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset
 from torch.utils.data import Dataset, DataLoader
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type = str, default = 'covtype')
+parser.add_argument('--data', type = str, default = 'imdbr')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
+parser.add_argument('--B', type=int, default = 2048)
 parser.add_argument('--every', type = int, default = 3)
 parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--num_runs', type = int, default = 5)
-parser.add_argument('--lr', type = float, default = 1e-2)
+parser.add_argument('--lr', type = float, default = 1e-4)
 parser.add_argument('--warmup', type = int, default = 3)
 parser.add_argument('--eps', type = float, default = 1e-4)
 parser.add_argument('--device', type = str, default = 'cuda:0')
@@ -60,10 +61,10 @@ for frac in frac_list:
                 model = LinearRegression(features.shape[1]).to('cuda:0')
 
             dataset = CLSDataset(features, labels) if CLS else REGDataset(features, labels)
-            subsetloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = False)
+            subsetloader = DataLoader(dataset, batch_size = args.B, shuffle = False)
 
             criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
-            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=1e-8)
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=1e-5)
             budget = math.ceil(frac*len(features))
             
             start_time = time.time()
@@ -88,7 +89,7 @@ for frac in frac_list:
                 if epoch % args.every == 0:
                     cs_start = time.time()
                     print ('Time to change the Coreset')
-                    grads_per_elem = compute_gradients(model, dataset, args.batch_size, criterion, CLS)
+                    grads_per_elem = compute_gradients(model, dataset, args.B, criterion, CLS)
                     idxs = []
                     weights = []
                     trn_gradients = grads_per_elem
@@ -96,7 +97,7 @@ for frac in frac_list:
                     #ompwrapper(device, X, Y, bud, v1, lam, eps)
                     idxs_temp, weights_temp = ompwrapper(args.device, torch.transpose(trn_gradients, 0, 1), 
                                                              sum_val_grad, 
-                                                             math.ceil(budget / args.batch_size), 
+                                                             math.ceil(budget / args.B), 
                                                              args.v1, args.lam, args.eps)
 
                     batch_wise_indices = list(subsetloader.batch_sampler)

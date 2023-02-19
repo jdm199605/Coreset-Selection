@@ -37,7 +37,7 @@ else:
     for prob in probs:
         Y = train_y.copy()
         bound = max(Y)
-        noises = np.random.binomial(1, prob, (len(Y),)) * np.random.uniform(-5*bound, 5*bound, (len(Y),))
+        noises = np.random.binomial(1, prob, (len(Y),)) * np.random.uniform(0, 5*bound, (len(Y),))
         Y += noises
         
         path = f'./data/{data}-train-y-{prob}'

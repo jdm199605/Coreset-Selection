@@ -10,17 +10,17 @@ from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type = str, default = 'covtype')
+parser.add_argument('--data', type = str, default = 'imdbr')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
 parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--method', type = str, default = 'full')
 parser.add_argument('--num_runs', type = int, default = 5)
-parser.add_argument('--lr', type = float, default = 1e-2)
+parser.add_argument('--lr', type = float, default = 1e-4)
 parser.add_argument('--device', type = str, default = 'cuda:0')
 args = parser.parse_args()
 
-frac_list = [1] if args.method == 'full' else [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
+frac_list = [1] if args.method == 'full' else [0.3, 0.5, 1]
 prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
@@ -61,7 +61,7 @@ for frac in frac_list:
             trainloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = True)
 
             criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
-            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum = 0.9, weight_decay = 1e-5)
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay = 1e-5)
             start_time = time.time() 
 
             model.train()

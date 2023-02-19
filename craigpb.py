@@ -10,12 +10,13 @@ from utils import distance, compute_score, compute_gamma, CLSDataset, REGDataset
 from torch.utils.data import Dataset, DataLoader
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--data', type = str, default = 'covtype')
+parser.add_argument('--data', type = str, default = 'imdbr')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
+parser.add_argument('--B', type = int, default = 1024)
 parser.add_argument('--num_epochs', type = int, default = 30)
-parser.add_argument('--num_runs', type = int, default = 5)
-parser.add_argument('--lr', type = float, default = 1e-2)
+parser.add_argument('--num_runs', type = int, default = 1)
+parser.add_argument('--lr', type = float, default = 1e-4)
 args = parser.parse_args()
 
 frac_list = [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
@@ -53,7 +54,7 @@ for frac in frac_list:
                 model = LinearRegression(features.shape[1]).to('cuda:0')
 
             dataset = CLSDataset(features, labels) if CLS else REGDataset(features, labels)
-            subsetloader = DataLoader(dataset, batch_size = args.batch_size, shuffle = False)
+            subsetloader = DataLoader(dataset, batch_size = args.B, shuffle = False)
 
             criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
             optimizer = torch.optim.SGD(model.parameters(), momentum = 0.9, lr=args.lr, weight_decay=1e-5)
@@ -61,20 +62,20 @@ for frac in frac_list:
 
             ssets = []
             weights = []
-            trainloader = DataLoader(dataset, batch_size = args.batch_size, shuffle=False)
+            #trainloader = DataLoader(dataset, batch_size = args.B, shuffle=False)
 
             idxs = torch.arange(features.shape[0])
             #N = len(idxs)
-            dist_mat = compute_score(idxs, dataset, args.batch_size)
+            dist_mat = compute_score(idxs, dataset, args.B)
             fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
                                                                               n_samples=math.ceil(
-                                                                                  frac * features.shape[0] / args.batch_size),
+                                                                                  frac * features.shape[0] / args.B),
                                                                               optimizer='lazy')
             sim_sub = fl.fit_transform(dist_mat)
             #print (len(sim_sub))
             temp_list = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
             gammas_temp = compute_gamma(dist_mat, temp_list)
-            batch_wise_indices = list(trainloader.batch_sampler)
+            batch_wise_indices = list(subsetloader.batch_sampler)
 
             for i in range(len(temp_list)):
                 tmp = batch_wise_indices[temp_list[i]]
