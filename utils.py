@@ -93,6 +93,7 @@ class MLPClassification(torch.nn.Module):
         return y, x
     
 def train_model(model, criterion, optimizer, features, labels, num_epochs, batch_size, num_batches, CLS):
+    features, labels = torch.Tensor(features), torch.Tensor(labels)
     for epoch in range(num_epochs):
         print (f'epoch {epoch+1} starts!')
         total_loss = 0
@@ -100,7 +101,7 @@ def train_model(model, criterion, optimizer, features, labels, num_epochs, batch
             start = b * batch_size
             end = (b+1) * batch_size
             end = min(len(features), end)
-            inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
+            inputs, targets = features[start:end], labels[start:end]
             outputs = model(inputs)[0]
             if not CLS:
                 targets = targets.unsqueeze(1)
