@@ -1,1 +1,1 @@
-PATH = './data/'
+PATH = '/research/remote/petabyte/users/e36467/Coreset/dataset/'
