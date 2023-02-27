@@ -29,7 +29,7 @@ parser.add_argument('--v1', type = int, default = 1)
 parser.add_argument('--lam', type = float, default = 0)
 args = parser.parse_args()
 
-frac_list = [1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
+frac_list = [1e-3, 1e-2, 0.1, 0.3, 0.5]
 prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
@@ -94,17 +94,18 @@ for frac in frac_list:
                     trn_gradients = grads_per_elem
                     sum_val_grad = torch.sum(trn_gradients, dim = 0)
                     #ompwrapper(device, X, Y, bud, v1, lam, eps)
-                    idxs_temp, weights_temp = ompwrapper(args.device, torch.transpose(trn_gradients, 0, 1), 
-                                                             sum_val_grad, 
-                                                             math.floor(budget / args.B), 
-                                                             args.v1, args.lam, args.eps)
-
-                    batch_wise_indices = create_batch_wise_indices(features, arg.B)
-                    for i in range(len(idxs_temp)):
-                        tmp = batch_wise_indices[idxs_temp[i]]
-                        idxs.extend(tmp)
-                        weights.extend(list(weights_temp[i] * np.ones(len(tmp))))
+                    if math.floor(budget/arg.B) > 0:
+                        idxs_temp, weights_temp = ompwrapper(args.device, torch.transpose(trn_gradients, 0, 1), 
+                                                                 sum_val_grad, 
+                                                                 math.floor(budget / args.B), 
+                                                                 args.v1, args.lam, args.eps)
                     
+                        batch_wise_indices = create_batch_wise_indices(features, args.B)
+                        for i in range(len(idxs_temp)):
+                            tmp = batch_wise_indices[idxs_temp[i]]
+                            idxs.extend(tmp)
+                            weights.extend(list(weights_temp[i] * np.ones(len(tmp))))
+
                     remain = budget - len(idxs)
                     
                     if remain > 0:
@@ -120,9 +121,7 @@ for frac in frac_list:
                     
                     cs_end = time.time()
                     print (f'It takes {cs_end - cs_start} seconds to select a new coreset for grad-match.')
-                    
-                    
-                    
+                           
                 batch_size = min(len(feats), args.batch_size)
                 num_batches = int(np.ceil(len(feats)/batch_size))
         

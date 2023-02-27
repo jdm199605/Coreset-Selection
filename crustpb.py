@@ -103,19 +103,20 @@ for frac in frac_list:
                     dist_mat = np.max(dist_mat) - dist_mat
                     weights_pb = np.sum(dist_mat < args.radius, axis = 1)
                     
-                    fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
-                                                                          n_samples=math.floor(budget / args.B),
-                                                                                              optimizer='lazy')
-                    sim_sub = fl.fit_transform(dist_mat)
-                    ssets_pb = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
-                    
-                    #batch_wise_indices = list(subsetloader.batch_sampler)
-                    batch_wise_indices = create_batch_wise_indices(features, arg.B)
+                    if math.floor(budget / args.B) > 0:
+                        fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
+                                                                              n_samples=math.floor(budget / args.B),
+                                                                                                  optimizer='lazy')
+                        sim_sub = fl.fit_transform(dist_mat)
+                        ssets_pb = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
 
-                    for i in range(len(ssets_pb)):
-                        tmp = batch_wise_indices[ssets_pb[i]]
-                        ssets.extend(tmp)
-                        weights.extend([weights_pb[i]] * len(tmp))
+                        #batch_wise_indices = list(subsetloader.batch_sampler)
+                        batch_wise_indices = create_batch_wise_indices(features, arg.B)
+
+                        for i in range(len(ssets_pb)):
+                            tmp = batch_wise_indices[ssets_pb[i]]
+                            ssets.extend(tmp)
+                            weights.extend([weights_pb[i]] * len(tmp))
                     
                     remain = budget - len(ssets)
                     
