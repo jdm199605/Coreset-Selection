@@ -10,6 +10,7 @@ import apricot
 from utils import compute_gradients, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, train_model, create_batch_wise_indices,MLPRegression, MLPClassification
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
+from global_variables import PATH
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'imdbr')
@@ -40,11 +41,13 @@ CLS = 1 if args.data in ['covtype', 'imdbc'] else 0 #whether it is a classificat
 
 for frac in frac_list:
     for prob in prob_list:
-        x_path = f'./data/{args.data}-train-x.npy'
+        x_path = PATH + f'{args.data}-train-x.npy'
         if CLS:
-            y_path = f'./data/{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
+            y_clean_path = PATH + f'{args.data}-train-y.npy'
+            y_path = PATH + f'{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else y_clean_path
         else:
-            y_path = f'./data/{args.data}-train-y-{prob}.npy' if prob != 0 else f'./data/{args.data}-train-y.npy'
+            y_clean_path = PATH + f'{args.data}-train-y.npy'
+            y_path = PATH + f'{args.data}-train-y-{prob}.npy' if prob != 0 else y_clean_path
         
         results = torch.zeros(args.num_runs)
         times = torch.zeros(args.num_runs)
@@ -138,8 +141,8 @@ for frac in frac_list:
             print ("End-to-end time is: %.4f", end_time-start_time)
 
             model.eval()
-            test_x = np.load(f'./data/{args.data}-test-x.npy')
-            test_y = np.load(f'./data/{args.data}-test-y.npy')
+            test_x = np.load(PATH + f'{args.data}-test-x.npy')
+            test_y = np.load(PATH + f'{args.data}-test-y.npy')
             test_size = len(test_y)
 
             test_x = torch.Tensor(test_x)

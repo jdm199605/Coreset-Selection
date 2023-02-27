@@ -8,6 +8,7 @@ import pandas as pd
 from utils import CLSDataset, REGDataset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, train_model
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
+from global_variables import PATH
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'imdbr')
@@ -35,13 +36,13 @@ CLS = 1 if args.data in ['covtype', 'imdbc'] else 0 #whether it is a classificat
 
 for frac in frac_list:
     for prob in prob_list:
-        x_path = f'./data/{args.data}-train-x.npy'
+        x_path = PATH + f'{args.data}-train-x.npy'
         if CLS:
-            y_clean_path = f'./data/{args.data}-train-y.npy'
-            y_path = f'./data/{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else y_clean_path
+            y_clean_path = PATH + f'{args.data}-train-y.npy'
+            y_path = PATH + f'{args.data}-train-y-{mode}-{prob}.npy' if prob != 0 else y_clean_path
         else:
-            y_clean_path = f'./data/{args.data}-train-y.npy'
-            y_path = f'./data/{args.data}-train-y-{prob}.npy' if prob != 0 else y_clean_path
+            y_clean_path = PATH + f'{args.data}-train-y.npy'
+            y_path = PATH + f'{args.data}-train-y-{prob}.npy' if prob != 0 else y_clean_path
         #print (x_path, y_path)
         
         results = torch.zeros(args.num_runs)
@@ -78,25 +79,6 @@ for frac in frac_list:
             batch_size = min(len(features), args.batch_size)
             num_batches = int(np.ceil(len(features)/batch_size))
 
-            #for epoch in range(args.num_epochs):
-            #    print (f'epoch {epoch+1} starts!')
-            #    total_loss = 0
-            #    for b in range(num_batches):
-            #        start = b * batch_size
-            #        end = (b+1) * batch_size
-            #        end = min(len(features), end)
-            #        inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
-            #        outputs = model(inputs)[0]
-            #        if not CLS:
-            #            targets = targets.unsqueeze(1)
-            #        loss = criterion(outputs, targets)
-            #        
-            #        total_loss += loss
-            #
-            #        optimizer.zero_grad()
-            #        loss.backward()
-            #        optimizer.step()
-            #    print (total_loss)
             batch_size = min(len(features), args.batch_size)
             num_batches = int(np.ceil(len(features)/batch_size))
             
@@ -106,8 +88,8 @@ for frac in frac_list:
             print ("Model training time is: %.4f", end_time-start_time)
 
             model.eval()
-            test_x = np.load(f'./data/{args.data}-test-x.npy')
-            test_y = np.load(f'./data/{args.data}-test-y.npy')
+            test_x = np.load(PATH + f'{args.data}-test-x.npy')
+            test_y = np.load(PATH + f'{args.data}-test-y.npy')
             test_size = len(test_y)
 
             test_x = torch.Tensor(test_x)
