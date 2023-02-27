@@ -8,7 +8,7 @@ import pandas as pd
 from utils import CLSDataset, REGDataset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, train_model
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
-from global_variables import PATH
+from global_variables import PATH, frac_list, prob_list
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'imdbr')
@@ -24,8 +24,7 @@ parser.add_argument('--num_layers', type = int, default = 3)
 parser.add_argument('--num_nodes', type = int, default = 100)
 args = parser.parse_args()
 
-frac_list = [1] if args.method == 'full' else [1e-4, 1e-3, 1e-2, 1e-1, 0.3, 0.5, 1]
-prob_list = [0, 0.2, 0.4, 0.6, 0.8]
+frac_list = [1] if args.method == 'full' else frac_list
 
 mode = 'sym' if args.mode == 0 else 'asym'
 

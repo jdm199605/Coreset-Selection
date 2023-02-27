@@ -8,7 +8,7 @@ import math
 import pandas as pd
 from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, create_batch_wise_indices, train_model
 from torch.utils.data import Dataset, DataLoader
-from global_variables import PATH
+from global_variables import PATH, prob_list, frac_list
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'imdbr')
@@ -28,9 +28,6 @@ parser.add_argument('--device', type = str, default = 'cuda:0')
 parser.add_argument('--v1', type = int, default = 1)
 parser.add_argument('--lam', type = float, default = 0)
 args = parser.parse_args()
-
-frac_list = [1e-3, 1e-2, 0.1, 0.3, 0.5]
-prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
 

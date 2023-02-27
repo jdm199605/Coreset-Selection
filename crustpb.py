@@ -10,7 +10,7 @@ import apricot
 from utils import compute_gradients, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, train_model, create_batch_wise_indices,MLPRegression, MLPClassification
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
-from global_variables import PATH
+from global_variables import PATH, frac_list, prob_list
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'imdbr')
@@ -28,9 +28,6 @@ parser.add_argument('--warmup', type = int, default = 3)
 parser.add_argument('--radius', type = float, default = 2.0)
 parser.add_argument('--device', type = str, default = 'cuda:0')
 args = parser.parse_args()
-
-frac_list = [1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
-prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
 
