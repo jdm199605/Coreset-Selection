@@ -6,7 +6,7 @@ import numpy as np
 import apricot
 import math
 import pandas as pd
-from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression
+from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, create_batch_wise_indices
 from torch.utils.data import Dataset, DataLoader
 
 parser = argparse.ArgumentParser()
@@ -20,12 +20,15 @@ parser.add_argument('--num_runs', type = int, default = 5)
 parser.add_argument('--lr', type = float, default = 1e-4)
 parser.add_argument('--warmup', type = int, default = 3)
 parser.add_argument('--eps', type = float, default = 1e-4)
+parser.add_argument('--linear', type = int, default = 0)
+parser.add_argument('--num_layers', type = int, default = 3)
+parser.add_argument('--num_nodes', type = int, default = 100)
 parser.add_argument('--device', type = str, default = 'cuda:0')
 parser.add_argument('--v1', type = int, default = 1)
 parser.add_argument('--lam', type = float, default = 0)
 args = parser.parse_args()
 
-frac_list = [1e-5, 1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
+frac_list = [1e-4, 1e-3, 1e-2, 0.1, 0.3, 0.5]
 prob_list = [0, 0.2, 0.4, 0.6, 0.8]
 
 mode = 'sym' if args.mode == 0 else 'asym'
@@ -56,40 +59,33 @@ for frac in frac_list:
 
             if CLS:
                 num_classes = len(np.unique(labels))
-                model = LogitRegression(features.shape[1], num_classes).to('cuda:0')
+                if args.linear:
+                    model = LogitRegression(features.shape[1], num_classes)
+                else:
+                    model = MLPClassification(features.shape[1], num_classes, args.num_layers, args.num_nodes)
             else:
-                model = LinearRegression(features.shape[1]).to('cuda:0')
-
-            dataset = CLSDataset(features, labels) if CLS else REGDataset(features, labels)
-            subsetloader = DataLoader(dataset, batch_size = args.B, shuffle = False)
+                if args.linear:
+                    model = LinearRegression(features.shape[1])
+                else:
+                    model = MLPRegression(features.shape[1], args.num_layers, args.num_nodes)
 
             criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
             optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=1e-5)
-            budget = math.ceil(frac*len(features))
+            budget = math.floor(frac*len(features))
             
             start_time = time.time()
-            # warm up training
             print (f'warm-up training starts. Total number of warm-up epochs: {args.warmup}.')
             if args.warmup != 0:
-                warmuploader = DataLoader(dataset, batch_size = args.batch_size, shuffle = False)
-                for epoch in range(args.warmup):
-                    for inputs, targets in warmuploader:
-                        inputs, targets = inputs.to('cuda:0'), targets.to('cuda:0')
-                        outputs = model(inputs)
-                        if not CLS:
-                            targets = targets.unsqueeze(1)
-                        loss = criterion(outputs, targets)
-                        
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
+                batch_size = min(len(features), args.batch_size)
+                num_batches = int(np.ceil(len(features)/batch_size))
+                model = train_model(model, criterion, optimizer, features, labels, args.warmup, args.batch_size, num_batches, CLS)
             
             for epoch in range(args.num_epochs-args.warmup):
                 print (f'Epoch {epoch + args.warmup} starts.')
                 if epoch % args.every == 0:
                     cs_start = time.time()
                     print ('Time to change the Coreset')
-                    grads_per_elem = compute_gradients(model, dataset, args.B, criterion, CLS)
+                    grads_per_elem = compute_gradients(model, features, labels, args.B, criterion, CLS)
                     idxs = []
                     weights = []
                     trn_gradients = grads_per_elem
@@ -97,10 +93,10 @@ for frac in frac_list:
                     #ompwrapper(device, X, Y, bud, v1, lam, eps)
                     idxs_temp, weights_temp = ompwrapper(args.device, torch.transpose(trn_gradients, 0, 1), 
                                                              sum_val_grad, 
-                                                             math.ceil(budget / args.B), 
+                                                             math.floor(budget / args.B), 
                                                              args.v1, args.lam, args.eps)
 
-                    batch_wise_indices = list(subsetloader.batch_sampler)
+                    batch_wise_indices = create_batch_wise_indices(features, arg.B)
                     for i in range(len(idxs_temp)):
                         tmp = batch_wise_indices[idxs_temp[i]]
                         idxs.extend(tmp)
@@ -122,22 +118,12 @@ for frac in frac_list:
                     cs_end = time.time()
                     print (f'It takes {cs_end - cs_start} seconds to select a new coreset for grad-match.')
                     
-                    coreset = Coreset(feats, labs, weights)
-                    trainloader = DataLoader(coreset, batch_size = args.batch_size, shuffle = True)
                     
-                for inputs, targets, weights in trainloader:
-                    inputs, targets, weights = torch.Tensor(inputs).to('cuda:0'), torch.Tensor(targets).to('cuda:0'), torch.Tensor(weights).to('cuda:0')
-                    outputs = model(inputs)
-                    if CLS:
-                        targets = targets.long()
-                        loss = (weights * criterion(outputs, targets)).sum()
-                    else:
-                        targets = targets.unsqueeze(1)
-                        loss = (weights * criterion(outputs, targets)).sum() / sum(weights)
                     
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                batch_size = min(len(feats), args.batch_size)
+                num_batches = int(np.ceil(len(feats)/batch_size))
+        
+                model = train_model(model, criterion, optimizer, feats, labs, 1, args.batch_size, num_batches, CLS)
            
             end_time = time.time()
             print ("End-to-end time is: %.4f", end_time-start_time)
@@ -147,17 +133,17 @@ for frac in frac_list:
             test_y = np.load(f'./data/{args.data}-test-y.npy')
             test_size = len(test_y)
 
-            test_x = torch.Tensor(test_x).to('cuda:0')
-            test_y = torch.Tensor(test_y).to('cuda:0')
+            test_x = torch.Tensor(test_x)
+            test_y = torch.Tensor(test_y)
             pred = torch.argmax(model(test_x), axis = 1)
             #print (pred)
             #results.append(sum(pos)/sum(Num))
             #print (pred.eq_(test_y))
             if CLS:
-                pred = torch.argmax(model(test_x), axis = 1)  
+                pred = torch.argmax(model(test_x), axis = 1)[0]  
                 results[run] = (sum(pred == test_y)/len(test_x))
             else:
-                pred = model(test_x)
+                pred = model(test_x)[0]
                 results[run] = math.sqrt(torch.pow(pred-test_y.unsqueeze(1), 2).sum() / len(test_y))
             times[run] = end_time - start_time
                 

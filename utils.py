@@ -49,18 +49,69 @@ class LogitRegression(torch.nn.Module):
         super(LogitRegression, self).__init__()
         self.linear = torch.nn.Linear(num_features, num_classes)
     
-    def forward(self, inputs):
-        output = self.linear(inputs)
-        return output
+    def forward(self, x):
+        y = self.linear(x)
+        return y, y
     
 class LinearRegression(torch.nn.Module): 
     def __init__(self, num_features):
         super(LinearRegression, self).__init__()
         self.linear = torch.nn.Linear(num_features, 1)
     
-    def forward(self, inputs):
-        return self.linear(inputs)
+    def forward(self, x):
+        y =  self.linear(x)
+        return y, y
 
+class MLPRegression(torch.nn.Module):
+    def __init__(self, num_features, num_layers, num_nodes):
+        super(MLPRegression, self).__init__()
+        layers = [torch.nn.Linear(num_nodes, num_nodes) for i in range(num_layers-1)]
+        layers.insert(0, nn.Linear(num_features, num_nodes))
+        self.layers = torch.nn.ModuleList(layers)
+        self.pred = torch.nn.Linear(num_nodes, 1)
+        
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        y = self.pred(x)
+        return y, x
+
+class MLPClassification(torch.nn.Module):
+    def __init__(self, num_features, num_classes, num_layers, num_nodes):
+        super(MLPRegression, self).__init__()
+        layers = [torch.nn.Linear(num_nodes, num_nodes) for i in range(num_layers-1)]
+        layers.insert(0, nn.Linear(num_features, num_nodes))
+        self.layers = torch.nn.ModuleList(layers)
+        self.pred = torch.nn.Linear(num_nodes, num_classes)
+        
+    def forward(self, x):
+        for layer in self.layers:
+            x = layer(x)
+        y = self.pred(x)
+        return y, x
+    
+def train_model(model, criterion, optimizer, features, labels, num_epochs, batch_size, num_batches, CLS):
+    for epoch in range(num_epochs):
+        print (f'epoch {epoch+1} starts!')
+        total_loss = 0
+        for b in range(num_batches):
+            start = b * batch_size
+            end = (b+1) * batch_size
+            end = min(len(features), end)
+            inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
+            outputs = model(inputs)[0]
+            if not CLS:
+                targets = targets.unsqueeze(1)
+            loss = criterion(outputs, targets)
+
+            total_loss += loss
+
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+        print (total_loss)
+    return model
+    
 def normalize(X, col):
     mu = np.mean(X[:,:col],axis=0)
     sigma = np.std(X[:,:col],axis=0)
@@ -132,22 +183,63 @@ def ompwrapper(device, X, Y, bud, v1, lam, eps):
                                             tol = eps, device = device)
         ind = torch.nonzero(reg).view(-1)
     return ind.tolist(), reg[ind].tolist()
+
+def create_batch_wise_indices(features, B):
+    indices = []
+    batch_size = min(B, len(features))
+    num_batches = int(np.ceil(len(features)/B))
+    for b in range(num_batches):
+        start = b * batch_size
+        end = (b+1) * batch_size
+        end = min(end, len(features))
+        indices.append(list(range(start, end)))
+    return indices      
     
-def compute_gradients(model, dataset, batch_size, criterion, CLS):
-    batchloader = DataLoader(dataset, batch_size = batch_size, shuffle = False)
+#def compute_gradients(model, dataset, batch_size, criterion, CLS):
+#    batchloader = DataLoader(dataset, batch_size = batch_size, shuffle = False)
+#    
+#    for batch_idx, (inputs, targets) in enumerate(batchloader):
+#        inputs, targets = inputs.to('cuda:0'), targets.to('cuda:0')
+#        
+#        if batch_idx == 0:
+#            output = model(inputs)
+#            if not CLS:
+#                targets = targets.unsqueeze(1)
+#            loss = criterion(output, targets).sum()
+#            l0_grads = torch.autograd.grad(loss, output)[0]
+#            l0_grads = l0_grads.mean(dim = 0).view(1, -1)
+#        else:
+#            output = model(inputs)
+#            if not CLS:
+#                targets = targets.unsqueeze(1)
+#            loss = criterion(output, targets).sum()
+#            batch_l0_grads = torch.autograd.grad(loss, output)[0]
+#            batch_l0_grads = batch_l0_grads.mean(dim=0).view(1, -1)
+#            l0_grads = torch.cat((l0_grads, batch_l0_grads), dim=0)
+#            
+#    torch.cuda.empty_cache()
+#    return l0_grads
+
+def compute_gradients(model, features, labels, B, criterion, CLS):
+    batch_size = min(B, len(features))
+    num_batches = int(np.ceil(len(features)/B))
     
-    for batch_idx, (inputs, targets) in enumerate(batchloader):
-        inputs, targets = inputs.to('cuda:0'), targets.to('cuda:0')
+    for b in range(num_batches):
+        start = b * batch_size
+        end =  (b+1) * batch_size
+        end = min(end, len(features))
+        inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
         
-        if batch_idx == 0:
-            output = model(inputs)
+        if b == 0:
+            output, last = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
+            #print (output.shape, targets.shape)
             loss = criterion(output, targets).sum()
             l0_grads = torch.autograd.grad(loss, output)[0]
             l0_grads = l0_grads.mean(dim = 0).view(1, -1)
         else:
-            output = model(inputs)
+            output, last = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
             loss = criterion(output, targets).sum()
@@ -157,7 +249,6 @@ def compute_gradients(model, dataset, batch_size, criterion, CLS):
             
     torch.cuda.empty_cache()
     return l0_grads
-
 ###################crust################################
             
         
