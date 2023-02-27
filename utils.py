@@ -69,10 +69,11 @@ class MLPRegression(torch.nn.Module):
         layers.insert(0, nn.Linear(num_features, num_nodes))
         self.layers = torch.nn.ModuleList(layers)
         self.pred = torch.nn.Linear(num_nodes, 1)
+        self.relu = torch.nn.ReLU()
         
     def forward(self, x):
         for layer in self.layers:
-            x = layer(x)
+            x = self.relu(layer(x))
         y = self.pred(x)
         return y, x
 
@@ -82,11 +83,12 @@ class MLPClassification(torch.nn.Module):
         layers = [torch.nn.Linear(num_nodes, num_nodes) for i in range(num_layers-1)]
         layers.insert(0, nn.Linear(num_features, num_nodes))
         self.layers = torch.nn.ModuleList(layers)
+        self.relu = torch.nn.ReLU()
         self.pred = torch.nn.Linear(num_nodes, num_classes)
         
     def forward(self, x):
         for layer in self.layers:
-            x = layer(x)
+            x = self.relu(layer(x))
         y = self.pred(x)
         return y, x
     
@@ -231,14 +233,17 @@ def compute_gradients(model, features, labels, B, criterion, CLS):
         inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
         
         if b == 0:
+            print (f'processing batch{b}')
             output, last = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
             #print (output.shape, targets.shape)
             loss = criterion(output, targets).sum()
             l0_grads = torch.autograd.grad(loss, output)[0]
+            print (l0_grads.shape)
             l0_grads = l0_grads.mean(dim = 0).view(1, -1)
         else:
+            print (f'processing batch{b}')
             output, last = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
