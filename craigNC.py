@@ -70,9 +70,6 @@ for frac in frac_list:
                 else:
                     model = MLPRegression(features.shape[1], args.num_layers, args.num_nodes)
 
-            #dataset = CLSDataset(features, labels) if CLS else REGDataset(features, labels)
-            #subsetloader = DataLoader(dataset, batch_size = args.B, shuffle = False)
-
             criterion = nn.CrossEntropyLoss() if CLS else nn.MSELoss()
             optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=1e-5)
             budget = math.ceil(frac*len(features))
@@ -94,20 +91,18 @@ for frac in frac_list:
                     weights = []
                     ssets = []
                     grads = compute_gradients(model, features, labels, args.B, criterion, CLS)
-                    #print (trn_gradients.shape)
                     
                     grads = grads.detach().cpu()
                     dist_mat = pairwise_distances(grads)
                     dist_mat = np.max(dist_mat) - dist_mat
-                    #weights_pb = np.sum(dist_mat < args.radius, axis = 1)
                     
                     if math.floor(budget / args.B) > 0:
                         fl = apricot.functions.facilityLocation.FacilityLocationSelection(random_state=0, metric='precomputed',
                                                                               n_samples=math.floor(budget / args.B),
                                                                                                   optimizer='lazy')
+                        
                         sim_sub = fl.fit_transform(dist_mat)
                         ssets_pb = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
-                        #temp_list = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
                         weights_pb = compute_gamma(dist_mat, ssets_pb)
 
                         batch_wise_indices = create_batch_wise_indices(features, args.B)
@@ -135,7 +130,6 @@ for frac in frac_list:
                     batch_size = min(len(feats), args.batch_size)
                     num_batches = int(np.ceil(len(feats)/batch_size))
         
-                    #model = train_model(model, criterion, optimizer, feats, labs, 1, args.batch_size, num_batches, CLS)
                     model = train_on_coreset_one_epoch(model, criterion, optimizer, feats, labs, weights, args.batch_size, num_batches, CLS)
            
             end_time = time.time()
