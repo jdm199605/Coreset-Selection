@@ -16,12 +16,14 @@ parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: 
 parser.add_argument('--batch_size', type = int, default = 128)
 parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--method', type = str, default = 'full')
-parser.add_argument('--num_runs', type = int, default = 5)
-parser.add_argument('--lr', type = float, default = 1e-4)
+parser.add_argument('--num_runs', type = int, default = 1)
+parser.add_argument('--lr', type = float, default = 1e-5)
 parser.add_argument('--device', type = str, default = 'cuda:0')
 parser.add_argument('--linear', type = int, default = 0)
 parser.add_argument('--num_layers', type = int, default = 3)
 parser.add_argument('--num_nodes', type = int, default = 100)
+parser.add_argument('--version', type=int, default = 0)
+
 args = parser.parse_args()
 
 frac_list = [1] if args.method == 'full' else frac_list
@@ -74,9 +76,6 @@ for frac in frac_list:
             start_time = time.time() 
 
             model.train()
-            
-            batch_size = min(len(features), args.batch_size)
-            num_batches = int(np.ceil(len(features)/batch_size))
 
             batch_size = min(len(features), args.batch_size)
             num_batches = int(np.ceil(len(features)/batch_size))
@@ -105,10 +104,16 @@ for frac in frac_list:
         df_results.loc[frac,prob] = float(results.mean())
         df_times.loc[frac,prob] = float(times.mean())
 
-        r_saved_path = f'./results/{args.method}-{args.data}-{mode}-results.csv' if CLS else \
-                            f'./results/{args.method}-{args.data}-results.csv'
-        t_saved_path = f'./times/{args.method}-{args.data}-{mode}-times.csv' if CLS else \
-                            f'./times/{args.method}-{args.data}-times.csv'
+        if args.version == 0:
+            r_saved_path = f'./results/gradmatch-{args.data}-{mode}-results.csv' if CLS else \
+                                f'./results/gradmatch-{args.data}-results.csv'
+            t_saved_path = f'./times/gradmatch-{args.data}-{mode}-times.csv' if CLS else \
+                                f'./times/gradmatch-{args.data}-times.csv'
+        else:
+            r_saved_path = f'./results/gradmatch-{args.data}-{mode}-results-{args.version}.csv' if CLS else \
+                                f'./results/gradmatch-{args.data}-results-{args.version}.csv'
+            t_saved_path = f'./times/gradmatch-{args.data}-{mode}-times-{args.version}.csv' if CLS else \
+                                f'./times/gradmatch-{args.data}-times-{args.version}.csv'
 
         df_results.to_csv(r_saved_path,sep=',',index=True)
         df_times.to_csv(t_saved_path, sep = ',',index=True)
