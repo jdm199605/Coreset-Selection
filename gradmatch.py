@@ -160,5 +160,5 @@ for frac in frac_list:
                                 f'./times/gradmatch-{args.data}-times-{args.version}.csv'
             
 
-        df_results.to_csv(r_saved_path,sep=',',index=True)
-        df_times.to_csv(t_saved_path,sep=',',index=True)
+        df_results.to_csv(r_saved_path,mode = 'a', sep=',',index=True)
+        df_times.to_csv(t_saved_path, mode = 'a', sep = ',',index=True)
