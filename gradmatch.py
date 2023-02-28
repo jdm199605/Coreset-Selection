@@ -6,7 +6,7 @@ import numpy as np
 import apricot
 import math
 import pandas as pd
-from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, create_batch_wise_indices, train_on_coreset_one_epoch
+from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, create_batch_wise_indices, train_on_coreset_one_epoch, train_model
 from torch.utils.data import Dataset, DataLoader
 from global_variables import PATH, prob_list, frac_list
 
