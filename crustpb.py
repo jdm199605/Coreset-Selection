@@ -7,7 +7,7 @@ import apricot
 import math
 import pandas as pd
 import apricot
-from utils import compute_gradients, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, train_model, create_batch_wise_indices,MLPRegression, MLPClassification
+from utils import compute_gradients, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, train_model, create_batch_wise_indices,MLPRegression, MLPClassification, train_on_coreset_one_epoch
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
 from global_variables import PATH, frac_list, prob_list
@@ -108,7 +108,7 @@ for frac in frac_list:
                         ssets_pb = list(np.array(np.argmax(sim_sub, axis=1)).reshape(-1))
 
                         #batch_wise_indices = list(subsetloader.batch_sampler)
-                        batch_wise_indices = create_batch_wise_indices(features, arg.B)
+                        batch_wise_indices = create_batch_wise_indices(features, args.B)
 
                         for i in range(len(ssets_pb)):
                             tmp = batch_wise_indices[ssets_pb[i]]
@@ -133,7 +133,8 @@ for frac in frac_list:
                     batch_size = min(len(feats), args.batch_size)
                     num_batches = int(np.ceil(len(feats)/batch_size))
         
-                    model = train_model(model, criterion, optimizer, feats, labs, 1, args.batch_size, num_batches, CLS)
+                    #model = train_model(model, criterion, optimizer, feats, labs, 1, args.batch_size, num_batches, CLS)
+                    model = train_on_coreset_one_epoch(model, criterion, optimizer, feats, labs, weights, args.batch_size, num_batches, CLS)
            
             end_time = time.time()
             print ("End-to-end time is: %.4f", end_time-start_time)
@@ -145,7 +146,6 @@ for frac in frac_list:
 
             test_x = torch.Tensor(test_x)
             test_y = torch.Tensor(test_y)
-            pred = torch.argmax(model(test_x), axis = 1)
             
             if CLS:
                 pred = torch.argmax(model(test_x), axis = 1)[0]

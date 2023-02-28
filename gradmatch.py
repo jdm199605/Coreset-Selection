@@ -6,7 +6,7 @@ import numpy as np
 import apricot
 import math
 import pandas as pd
-from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, create_batch_wise_indices, train_model
+from utils import compute_gradients, ompwrapper, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, MLPRegression, MLPClassification, create_batch_wise_indices, train_on_coreset_one_epoch
 from torch.utils.data import Dataset, DataLoader
 from global_variables import PATH, prob_list, frac_list
 
@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'imdbr')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
-parser.add_argument('--B', type=int, default = 2048)
+parser.add_argument('--B', type=int, default = 1024)
 parser.add_argument('--every', type = int, default = 3)
 parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--num_runs', type = int, default = 5)
@@ -24,7 +24,7 @@ parser.add_argument('--eps', type = float, default = 1e-4)
 parser.add_argument('--linear', type = int, default = 0)
 parser.add_argument('--num_layers', type = int, default = 3)
 parser.add_argument('--num_nodes', type = int, default = 100)
-parser.add_argument('--device', type = str, default = 'cuda:0')
+parser.add_argument('--device', type = str, default = 'cpu')
 parser.add_argument('--v1', type = int, default = 1)
 parser.add_argument('--lam', type = float, default = 0)
 args = parser.parse_args()
@@ -90,12 +90,13 @@ for frac in frac_list:
                     weights = []
                     trn_gradients = grads_per_elem
                     sum_val_grad = torch.sum(trn_gradients, dim = 0)
-                    #ompwrapper(device, X, Y, bud, v1, lam, eps)
+                    ompwrapper(device, X, Y, bud, v1, lam, eps)
                     if math.floor(budget/arg.B) > 0:
                         idxs_temp, weights_temp = ompwrapper(args.device, torch.transpose(trn_gradients, 0, 1), 
                                                                  sum_val_grad, 
                                                                  math.floor(budget / args.B), 
                                                                  args.v1, args.lam, args.eps)
+                        idxs_temp, weights_temp = ompwrapper()
                     
                         batch_wise_indices = create_batch_wise_indices(features, args.B)
                         for i in range(len(idxs_temp)):
@@ -122,7 +123,7 @@ for frac in frac_list:
                 batch_size = min(len(feats), args.batch_size)
                 num_batches = int(np.ceil(len(feats)/batch_size))
         
-                model = train_model(model, criterion, optimizer, feats, labs, 1, args.batch_size, num_batches, CLS)
+                model = train_on_coreset_one_epoch(model, criterion, optimizer, feats, labs, weights, args.batch_size, num_batches, CLS)
            
             end_time = time.time()
             print ("End-to-end time is: %.4f", end_time-start_time)
@@ -134,10 +135,7 @@ for frac in frac_list:
 
             test_x = torch.Tensor(test_x)
             test_y = torch.Tensor(test_y)
-            pred = torch.argmax(model(test_x), axis = 1)
-            #print (pred)
-            #results.append(sum(pos)/sum(Num))
-            #print (pred.eq_(test_y))
+            
             if CLS:
                 pred = torch.argmax(model(test_x), axis = 1)[0]  
                 results[run] = (sum(pred == test_y)/len(test_x))

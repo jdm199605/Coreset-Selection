@@ -114,6 +114,31 @@ def train_model(model, criterion, optimizer, features, labels, num_epochs, batch
             optimizer.step()
         print (total_loss)
     return model
+
+def train_on_coreset_one_epoch(model, criterion, optimizer, features, labels, weights, batch_size, num_batches, CLS):
+    features, labels, weights = torch.Tensor(features), torch.Tensor(labels), torch.Tensor(weights)
+        #print (f'epoch {epoch+1} starts!')
+    total_loss = 0
+    for b in range(num_batches):
+        start = b * batch_size
+        end = (b+1) * batch_size
+        end = min(len(features), end)
+        inputs, targets, wgts = features[start:end], labels[start:end], weights[start:end]
+        outputs = model(inputs)[0]
+        if not CLS:
+            targets = targets.unsqueeze(1)
+            loss = (wgts * criterion(outputs, targets)) / wgts.sum()
+        else:
+            loss = criterion(outputs, targets)
+
+        total_loss += loss
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+    print (total_loss)
+    return model
+    
     
 def normalize(X, col):
     mu = np.mean(X[:,:col],axis=0)
