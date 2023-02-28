@@ -90,13 +90,11 @@ for frac in frac_list:
                     weights = []
                     trn_gradients = grads_per_elem
                     sum_val_grad = torch.sum(trn_gradients, dim = 0)
-                    ompwrapper(device, X, Y, bud, v1, lam, eps)
-                    if math.floor(budget/arg.B) > 0:
+                    if math.floor(budget/args.B) > 0:
                         idxs_temp, weights_temp = ompwrapper(args.device, torch.transpose(trn_gradients, 0, 1), 
                                                                  sum_val_grad, 
                                                                  math.floor(budget / args.B), 
                                                                  args.v1, args.lam, args.eps)
-                        idxs_temp, weights_temp = ompwrapper()
                     
                         batch_wise_indices = create_batch_wise_indices(features, args.B)
                         for i in range(len(idxs_temp)):
