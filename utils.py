@@ -127,9 +127,9 @@ def train_on_coreset_one_epoch(model, criterion, optimizer, features, labels, we
         outputs = model(inputs)[0]
         if not CLS:
             targets = targets.unsqueeze(1)
-            loss = (wgts * criterion(outputs, targets)) / wgts.sum()
+            loss = (wgts * criterion(outputs, targets)).sum() / wgts.sum()
         else:
-            loss = criterion(outputs, targets)
+            loss = (wgts * criterion(outputs, targets)).sum()
 
         total_loss += loss
 
@@ -259,7 +259,6 @@ def compute_gradients(model, features, labels, B, criterion, CLS):
         inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
         
         if b == 0:
-            print (f'processing batch{b}')
             output, last = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
@@ -269,7 +268,6 @@ def compute_gradients(model, features, labels, B, criterion, CLS):
             print (l0_grads.shape)
             l0_grads = l0_grads.mean(dim = 0).view(1, -1)
         else:
-            print (f'processing batch{b}')
             output, last = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
