@@ -7,7 +7,7 @@ import apricot
 import math
 import pandas as pd
 import apricot
-from utils import compute_gradients, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, train_model, create_batch_wise_indices,MLPRegression, MLPClassification, train_on_coreset_one_epoch
+from utils import compute_gradients, CLSDataset, REGDataset, Coreset, LogitRegression, LinearRegression, train_model, create_batch_wise_indices,MLPRegression, MLPClassification, train_on_coreset_one_epoch, estimate_gradients
 from torch.utils.data import Dataset, DataLoader
 from sklearn.metrics import pairwise_distances
 from global_variables import PATH, frac_list, prob_list
@@ -53,7 +53,7 @@ for frac in frac_list:
         for run in range(args.num_runs):
             features = np.load(x_path)
             labels = np.load(y_path)
-            idxs = np.random.choice(len(features), len(features), replace=False)
+            idxs = np.random.choice(len(features), int(0.05*(len(features))), replace=False)
             features = features[idxs]
             labels = labels[idxs]
             num_classes = len(np.unique(labels))
@@ -93,7 +93,8 @@ for frac in frac_list:
                     
                     weights = []
                     ssets = []
-                    grads = compute_gradients(model, features, labels, args.B, criterion, CLS)
+                    num_classes = num_classes if CLS else 1
+                    grads = estimate_gradients(model, features, labels, args.B, criterion, CLS, num_classes)
                     #print (trn_gradients.shape)
                     
                     grads = grads.detach().cpu()

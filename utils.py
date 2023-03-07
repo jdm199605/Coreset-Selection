@@ -48,19 +48,27 @@ class LogitRegression(torch.nn.Module):
     def __init__(self, num_features, num_classes):
         super(LogitRegression, self).__init__()
         self.linear = torch.nn.Linear(num_features, num_classes)
+        self.num_features = num_features
     
     def forward(self, x):
         y = self.linear(x)
-        return y, y
+        return y, x
+    
+    def get_embed_dim(self):
+        return self.num_features
     
 class LinearRegression(torch.nn.Module): 
     def __init__(self, num_features):
         super(LinearRegression, self).__init__()
         self.linear = torch.nn.Linear(num_features, 1)
+        self.num_features = num_features
     
     def forward(self, x):
         y =  self.linear(x)
-        return y, y
+        return y, x
+    
+    def get_embed_dim(self):
+        return self.num_features
 
 class MLPRegression(torch.nn.Module):
     def __init__(self, num_features, num_layers, num_nodes):
@@ -70,21 +78,7 @@ class MLPRegression(torch.nn.Module):
         self.layers = torch.nn.ModuleList(layers)
         self.pred = torch.nn.Linear(num_nodes, 1)
         self.relu = torch.nn.ReLU()
-        
-    def forward(self, x):
-        for layer in self.layers:
-            x = self.relu(layer(x))
-        y = self.pred(x)
-        return y, x
-
-class MLPClassification(torch.nn.Module):
-    def __init__(self, num_features, num_classes, num_layers, num_nodes):
-        super(MLPRegression, self).__init__()
-        layers = [torch.nn.Linear(num_nodes, num_nodes) for i in range(num_layers-1)]
-        layers.insert(0, nn.Linear(num_features, num_nodes))
-        self.layers = torch.nn.ModuleList(layers)
-        self.relu = torch.nn.ReLU()
-        self.pred = torch.nn.Linear(num_nodes, num_classes)
+        self.num_nodes = num_nodes
         
     def forward(self, x):
         for layer in self.layers:
@@ -92,8 +86,32 @@ class MLPClassification(torch.nn.Module):
         y = self.pred(x)
         return y, x
     
+    def get_embed_dim(self):
+        return self.num_nodes
+
+class MLPClassification(torch.nn.Module):
+    def __init__(self, num_features, num_classes, num_layers, num_nodes):
+        super(MLPClassification, self).__init__()
+        layers = [torch.nn.Linear(num_nodes, num_nodes) for i in range(num_layers-1)]
+        layers.insert(0, nn.Linear(num_features, num_nodes))
+        self.layers = torch.nn.ModuleList(layers)
+        self.relu = torch.nn.ReLU()
+        self.pred = torch.nn.Linear(num_nodes, num_classes)
+        self.num_nodes = num_nodes
+        
+    def forward(self, x):
+        for layer in self.layers:
+            x = self.relu(layer(x))
+        y = self.pred(x)
+        return y, x
+    
+    def get_embed_dim(self):
+        return self.num_nodes
+    
 def train_model(model, criterion, optimizer, features, labels, num_epochs, batch_size, num_batches, CLS):
     features, labels = torch.Tensor(features), torch.Tensor(labels)
+    if CLS:
+        labels = labels.long()
     for epoch in range(num_epochs):
         print (f'epoch {epoch+1} starts!')
         total_loss = 0
@@ -118,6 +136,8 @@ def train_model(model, criterion, optimizer, features, labels, num_epochs, batch
 def train_on_coreset_one_epoch(model, criterion, optimizer, features, labels, weights, batch_size, num_batches, CLS):
     features, labels, weights = torch.Tensor(features), torch.Tensor(labels), torch.Tensor(weights)
         #print (f'epoch {epoch+1} starts!')
+    if CLS:
+        labels = labels.long()
     total_loss = 0
     for b in range(num_batches):
         start = b * batch_size
@@ -198,8 +218,9 @@ def combine_features(features):
 #####################grad_match###################
 def ompwrapper(device, X, Y, bud, v1, lam, eps):
     if device == "cpu":
-        reg = OrthogonalMP_REG(X.numpy(), Y.numpy(), nnz=bud, positive=True, lam=0)
+        reg = OrthogonalMP_REG(X.detach().numpy(), Y.detach().numpy(), nnz=bud, positive=True, lam=0)
         ind = np.nonzero(reg)[0]
+        print (reg.shape, len(np.nonzero(reg)))
     else:
         if v1:
             reg = OrthogonalMP_REG_Parallel_V1(X, Y, nnz=bud,
@@ -248,37 +269,94 @@ def create_batch_wise_indices(features, B):
 #    torch.cuda.empty_cache()
 #    return l0_grads
 
-def compute_gradients(model, features, labels, B, criterion, CLS):
+def compute_gradients(model, features, labels, B, criterion, CLS, num_classes):
     batch_size = min(B, len(features))
     num_batches = int(np.ceil(len(features)/B))
+    embDim = model.get_embed_dim()
     
     for b in range(num_batches):
         start = b * batch_size
         end =  (b+1) * batch_size
         end = min(end, len(features))
         inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
+        if CLS:
+            targets = targets.long()
         
         if b == 0:
-            output, last = model(inputs)
+            output, l1 = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
             #print (output.shape, targets.shape)
             loss = criterion(output, targets).sum()
             l0_grads = torch.autograd.grad(loss, output)[0]
-            print (l0_grads.shape)
-            l0_grads = l0_grads.mean(dim = 0).view(1, -1)
+            l0_expand = torch.repeat_interleave(l0_grads, embDim, dim=1)
+            l1_grads = l0_expand * l1.repeat(1, num_classes)                    
+            l0_grads = l0_grads.mean(dim=0).view(1, -1)
+            l1_grads = l1_grads.mean(dim=0).view(1, -1)      
         else:
-            output, last = model(inputs)
+            output, l1 = model(inputs)
             if not CLS:
                 targets = targets.unsqueeze(1)
             loss = criterion(output, targets).sum()
             batch_l0_grads = torch.autograd.grad(loss, output)[0]
+            batch_l0_expand = torch.repeat_interleave(batch_l0_grads, embDim, dim=1)
+            #print (batch_l0_expand.shape, l1.shape)
+            batch_l1_grads = batch_l0_expand * l1.repeat(1, num_classes)
             batch_l0_grads = batch_l0_grads.mean(dim=0).view(1, -1)
+            batch_l1_grads = batch_l1_grads.mean(dim=0).view(1, -1)
             l0_grads = torch.cat((l0_grads, batch_l0_grads), dim=0)
+            l1_grads = torch.cat((l1_grads, batch_l1_grads), dim=0)
+            #print (l1_grads.shape)
             
     torch.cuda.empty_cache()
+    #print (l0_grads.shape)
+    #return l0_grads
+    return torch.cat((l0_grads, l1_grads), dim=1)
+###################prob################################
+def estimate_gradients(model, features, labels, B, criterion, CLS, num_classes):
+    batch_size = min(B, len(features))
+    num_batches = int(np.ceil(len(features)/B))
+    #embDim = model.get_embed_dim()
+    
+    for b in range(num_batches):
+        start = b * batch_size
+        end =  (b+1) * batch_size
+        end = min(end, len(features))
+        inputs, targets = torch.Tensor(features[start:end]), torch.Tensor(labels[start:end])
+        if CLS:
+            targets = targets.long()
+        
+        if b == 0:
+            output, l1 = model(inputs)
+            if not CLS:
+                targets = targets.unsqueeze(1)
+            #print (output.shape, targets.shape)
+            loss = criterion(output, targets).sum()
+            l0_grads = torch.autograd.grad(loss, l1)[0]
+            #l0_expand = torch.repeat_interleave(l0_grads, embDim, dim=1)
+            #l1_grads = l0_expand * l1.repeat(1, num_classes)                    
+            l0_grads = l0_grads.mean(dim=0).view(1, -1)
+            #l1_grads = l1_grads.mean(dim=0).view(1, -1)      
+        else:
+            output, l1 = model(inputs)
+            if not CLS:
+                targets = targets.unsqueeze(1)
+            loss = criterion(output, targets).sum()
+            batch_l0_grads = torch.autograd.grad(loss, l1)[0]
+            #batch_l0_expand = torch.repeat_interleave(batch_l0_grads, embDim, dim=1)
+            #print (batch_l0_expand.shape, l1.shape)
+            #batch_l1_grads = batch_l0_expand * l1.repeat(1, num_classes)
+            batch_l0_grads = batch_l0_grads.mean(dim=0).view(1, -1)
+            #batch_l1_grads = batch_l1_grads.mean(dim=0).view(1, -1)
+            l0_grads = torch.cat((l0_grads, batch_l0_grads), dim=0)
+            #l1_grads = torch.cat((l1_grads, batch_l1_grads), dim=0)
+            #print (l1_grads.shape)
+            
+    torch.cuda.empty_cache()
+    #print (l0_grads.shape)
+    #return l0_grads
     return l0_grads
-###################crust################################
+    
             
         
     

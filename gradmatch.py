@@ -14,7 +14,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--data', type = str, default = 'imdbr')
 parser.add_argument('--mode', type = int, default = 0) # 0: symmetric noise, 1: asymmetric noise
 parser.add_argument('--batch_size', type = int, default = 128)
-parser.add_argument('--B', type=int, default = 1024)
+parser.add_argument('--B', type=int, default = 256)
 parser.add_argument('--every', type = int, default = 3)
 parser.add_argument('--num_epochs', type = int, default = 30)
 parser.add_argument('--num_runs', type = int, default = 5)
@@ -53,10 +53,10 @@ for frac in frac_list:
         for run in range(args.num_runs):
             features = np.load(x_path)
             labels = np.load(y_path)
+            num_classes = len(np.unique(labels))
             idxs = np.random.choice(len(features), len(features), replace=False)
             features = features[idxs]
             labels = labels[idxs]
-            num_classes = len(np.unique(labels))
 
             if CLS:
                 num_classes = len(np.unique(labels))
@@ -86,16 +86,21 @@ for frac in frac_list:
                 if epoch % args.every == 0:
                     cs_start = time.time()
                     print ('Time to change the Coreset')
-                    grads_per_elem = compute_gradients(model, features, labels, args.B, criterion, CLS)
+                    num_classes = num_classes if CLS else 1
+                    grads_per_elem = compute_gradients(model, features, labels, args.B, criterion, CLS, num_classes)
                     idxs = []
                     weights = []
                     trn_gradients = grads_per_elem
+                    #print (trn_gradients.shape)
                     sum_val_grad = torch.sum(trn_gradients, dim = 0)
                     if math.floor(budget/args.B) > 0:
                         idxs_temp, weights_temp = ompwrapper(args.device, torch.transpose(trn_gradients, 0, 1), 
                                                                  sum_val_grad, 
                                                                  math.floor(budget / args.B), 
                                                                  args.v1, args.lam, args.eps)
+                        print (idxs_temp)
+                        print (weights_temp)
+                        print (math.floor(budget / args.B))
                     
                         batch_wise_indices = create_batch_wise_indices(features, args.B)
                         for i in range(len(idxs_temp)):
