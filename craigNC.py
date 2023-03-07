@@ -90,7 +90,8 @@ for frac in frac_list:
                     
                     weights = []
                     ssets = []
-                    grads = compute_gradients(model, features, labels, args.B, criterion, CLS)
+                    num_classes = num_classes if CLS else 1
+                    grads = compute_gradients(model, features, labels, args.B, criterion, CLS, num_classes)
                     
                     grads = grads.detach().cpu()
                     dist_mat = pairwise_distances(grads)
